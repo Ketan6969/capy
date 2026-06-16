@@ -430,156 +430,7 @@ func (n *Node) QuerySelector(selector string) *Node {
 }
 
 func (n *Node) QuerySelectorAll(selector string) []*Node {
-	selector = strings.TrimSpace(selector)
-	if selector == "" {
-		return nil
-	}
-
-	// Handle multiple selectors separated by comma
-	if strings.Contains(selector, ",") {
-		var results []*Node
-		seen := make(map[int]bool)
-		for _, part := range strings.Split(selector, ",") {
-			for _, res := range n.QuerySelectorAll(part) {
-				if !seen[res.Uid] {
-					seen[res.Uid] = true
-					results = append(results, res)
-				}
-			}
-		}
-		return results
-	}
-
-	// Basic descendant combinator split by space
-	parts := strings.Fields(selector)
-	if len(parts) == 0 {
-		return nil
-	}
-
-	matchPart := func(part string) func(*Node) bool {
-		return func(node *Node) bool {
-			if node.NodeType != ElementNode {
-				return false
-			}
-			p := part
-
-			// 1. Tag name
-			tagName := ""
-			idx := strings.IndexAny(p, "#.[")
-			if idx == -1 {
-				tagName = p
-				p = ""
-			} else if idx > 0 {
-				tagName = p[:idx]
-				p = p[idx:]
-			}
-			if tagName != "" && tagName != "*" {
-				if node.NodeName != strings.ToUpper(tagName) {
-					return false
-				}
-			}
-
-			// 2. ID, Classes, Attributes
-			for len(p) > 0 {
-				if p[0] == '#' {
-					p = p[1:]
-					idx = strings.IndexAny(p, "#.[")
-					id := p
-					if idx != -1 {
-						id = p[:idx]
-						p = p[idx:]
-					} else {
-						p = ""
-					}
-					if node.Id != id {
-						return false
-					}
-				} else if p[0] == '.' {
-					p = p[1:]
-					idx = strings.IndexAny(p, "#.[")
-					cls := p
-					if idx != -1 {
-						cls = p[:idx]
-						p = p[idx:]
-					} else {
-						p = ""
-					}
-					found := false
-					for _, c := range strings.Fields(node.ClassName) {
-						if c == cls {
-							found = true
-							break
-						}
-					}
-					if !found {
-						return false
-					}
-				} else if p[0] == '[' {
-					idx = strings.Index(p, "]")
-					if idx == -1 {
-						break
-					}
-					attrExpr := p[1:idx]
-					p = p[idx+1:]
-
-					eqIdx := strings.Index(attrExpr, "=")
-					if eqIdx == -1 {
-						if !node.HasAttribute(attrExpr) {
-							return false
-						}
-					} else {
-						attrName := attrExpr[:eqIdx]
-						attrVal := strings.Trim(attrExpr[eqIdx+1:], "\"'")
-						if node.GetAttribute(attrName) != attrVal {
-							return false
-						}
-					}
-				} else {
-					break // unsupported syntax
-				}
-			}
-			return true
-		}
-	}
-
-	matchers := make([]func(*Node) bool, len(parts))
-	for i, part := range parts {
-		matchers[i] = matchPart(part)
-	}
-
-	var results []*Node
-	var dfs func(node *Node, matchIndex int)
-	dfs = func(node *Node, matchIndex int) {
-		if matchIndex == len(matchers) {
-			results = append(results, node)
-			return
-		}
-		matcher := matchers[matchIndex]
-		for _, child := range node.ChildNodes {
-			if matcher(child) {
-				if matchIndex == len(matchers)-1 {
-					results = append(results, child)
-				} else {
-					dfs(child, matchIndex+1)
-				}
-			}
-			dfs(child, matchIndex)
-		}
-	}
-
-	dfs(n, 0)
-
-	// Deduplicate in case multiple paths matched
-	dedup := make([]*Node, 0, len(results))
-	seen := make(map[int]bool)
-	for _, r := range results {
-		if !seen[r.Uid] {
-			seen[r.Uid] = true
-			dedup = append(dedup, r)
-		}
-	}
-
-	return dedup
+	return querySelectorAllImpl(n, selector)
 }
 
 func (n *Node) GetOuterHTML() string {
@@ -888,4 +739,44 @@ func SetupDOM(vm *goja.Runtime, documentRoot *Node, docURL string) {
 	if err != nil {
 		slog.Error("Error executing xhr polyfills", "error", err)
 	}
+}
+
+func (n *Node) NextElementSibling() *Node {
+	if n.ParentNode == nil {
+		return nil
+	}
+	found := false
+	for _, c := range n.ParentNode.ChildNodes {
+		if c.Uid == n.Uid {
+			found = true
+		} else if found && c.NodeType == ElementNode {
+			return c
+		}
+	}
+	return nil
+}
+
+func (n *Node) PreviousElementSibling() *Node {
+	if n.ParentNode == nil {
+		return nil
+	}
+	var last *Node
+	for _, c := range n.ParentNode.ChildNodes {
+		if c.Uid == n.Uid {
+			return last
+		}
+		if c.NodeType == ElementNode {
+			last = c
+		}
+	}
+	return nil
+}
+
+func (n *Node) HasClass(class string) bool {
+	for _, c := range strings.Fields(n.ClassName) {
+		if c == class {
+			return true
+		}
+	}
+	return false
 }

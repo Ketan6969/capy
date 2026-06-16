@@ -241,6 +241,98 @@
 				stopImmediatePropagation() { this._propagationStopped = true; this._immediatePropagationStopped = true; }
 			};
 
+			// --- POLYFILLS INJECTED HERE ---
+			Object.defineProperty(proto, 'nextElementSibling', {
+				get() {
+					if (!this.parentNode || !this.parentNode.childNodes) return null;
+					const siblings = this.parentNode.childNodes;
+					let found = false;
+					for (let i = 0; i < siblings.length; i++) {
+						if (siblings[i] === this) {
+							found = true;
+						} else if (found && Number(siblings[i].nodeType) === 1) {
+							return siblings[i];
+						}
+					}
+					return null;
+				},
+				configurable: true,
+				enumerable: false
+			});
+			Object.defineProperty(proto, 'previousElementSibling', {
+				get() {
+					if (!this.parentNode || !this.parentNode.childNodes) return null;
+					const siblings = this.parentNode.childNodes;
+					let lastElement = null;
+					for (let i = 0; i < siblings.length; i++) {
+						if (siblings[i] === this) {
+							return lastElement;
+						}
+						if (Number(siblings[i].nodeType) === 1) {
+							lastElement = siblings[i];
+						}
+					}
+					return null;
+				},
+				configurable: true,
+				enumerable: false
+			});
+			proto.closest = function(selector) {
+				let el = this;
+				while (el && el.nodeType === 1) {
+					// We can implement a basic native call if available, or just use querySelector
+					if (el.matches && el.matches(selector)) return el;
+					// Fallback if matches is missing:
+					if (!el.matches) {
+						if (el.parentNode && el.parentNode.querySelectorAll) {
+							const matches = Array.from(el.parentNode.querySelectorAll(selector));
+							if (matches.includes(el)) return el;
+						}
+					}
+					el = el.parentNode;
+				}
+				return null;
+			};
+			if (!proto.matches) {
+				proto.matches = function(selector) {
+					if (!this.parentNode || !this.parentNode.querySelectorAll) return false;
+					const matches = Array.from(this.parentNode.querySelectorAll(selector));
+					return matches.includes(this);
+				};
+			}
+			
+			// Stub AbortController and AbortSignal
+			globalThis.AbortSignal = class AbortSignal {
+				constructor() {
+					this.aborted = false;
+					this.reason = undefined;
+					this.onabort = null;
+				}
+				static abort(reason) {
+					const s = new AbortSignal();
+					s.aborted = true;
+					s.reason = reason;
+					return s;
+				}
+				static timeout(ms) {
+					const s = new AbortSignal();
+					setTimeout(() => { s.aborted = true; s.reason = new Error('TimeoutError'); }, ms);
+					return s;
+				}
+				addEventListener() {}
+				removeEventListener() {}
+				throwIfAborted() { if (this.aborted) throw this.reason; }
+			};
+			globalThis.AbortController = class AbortController {
+				constructor() {
+					this.signal = new AbortSignal();
+				}
+				abort(reason) {
+					this.signal.aborted = true;
+					this.signal.reason = reason;
+				}
+			};
+
 			proto.addEventListener = function(type, callback, options) {
 				const capture = typeof options === 'boolean' ? options : (options && options.capture) || false;
 				if (!this.expandos) this.expandos = {};

@@ -10,7 +10,7 @@ import (
 
 func main() {
 	scrapeExampleCom()
-	fmt.Println("\n------------------------------------------------\n")
+	fmt.Println("\n------------------------------------------------")
 	scrapeQuotes()
 }
 

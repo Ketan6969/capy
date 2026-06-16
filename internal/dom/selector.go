@@ -27,12 +27,6 @@ type attrSelector struct {
 }
 
 func parseSelector(sel string) []selectorToken {
-	// A naive tokenizer for CSS selectors.
-	// We'll split by combinators and then parse simple selectors.
-	// For simplicity, we handle commas by splitting before parsing.
-
-	// Replace combinators with padded spaces so we can tokenize easily
-	// taking care of strings inside brackets
 	var tokens []selectorToken
 
 	sel = strings.TrimSpace(sel)
@@ -40,15 +34,12 @@ func parseSelector(sel string) []selectorToken {
 		return tokens
 	}
 
-	// This is a simplified regex-based parser
-	// It assumes well-formed selectors without complex nested spaces (like inside :not(.a .b))
-
-	// 1. Tokenize into combinators and simple selectors
 	var parts []string
 	var current strings.Builder
 	inAttr := false
 	inString := false
 	var stringChar rune
+	inParens := 0
 
 	for _, ch := range sel {
 		if inString {
@@ -75,13 +66,30 @@ func parseSelector(sel string) []selectorToken {
 			continue
 		}
 
+		if ch == '(' {
+			inParens++
+			current.WriteRune(ch)
+			continue
+		} else if ch == ')' {
+			inParens--
+			if inParens < 0 {
+				inParens = 0
+			}
+			current.WriteRune(ch)
+			continue
+		}
+
+		if inParens > 0 {
+			current.WriteRune(ch)
+			continue
+		}
+
 		if ch == ' ' || ch == '>' || ch == '+' || ch == '~' {
 			if current.Len() > 0 {
 				parts = append(parts, current.String())
 				current.Reset()
 			}
 			if ch != ' ' || (len(parts) > 0 && parts[len(parts)-1] != " " && parts[len(parts)-1] != ">" && parts[len(parts)-1] != "+" && parts[len(parts)-1] != "~") {
-				// Only add space combinator if we don't already have a combinator
 				parts = append(parts, string(ch))
 			}
 		} else {
@@ -92,12 +100,10 @@ func parseSelector(sel string) []selectorToken {
 		parts = append(parts, current.String())
 	}
 
-	// Clean up consecutive spaces or combinator + space
 	var cleanedParts []string
 	for i := 0; i < len(parts); i++ {
 		p := strings.TrimSpace(parts[i])
 		if p == "" {
-			// It was a space combinator
 			if i > 0 && i < len(parts)-1 {
 				prev := cleanedParts[len(cleanedParts)-1]
 				if prev != ">" && prev != "+" && prev != "~" && prev != " " {
@@ -137,12 +143,12 @@ func parseSimpleSelector(sel string) selectorToken {
 	var tok selectorToken
 	tok.tag = "*"
 
-	// A simpler manual parser is better to handle multiple classes/attrs
 	var current strings.Builder
-	mode := 't' // t: tag, #: id, .: class, [: attr, :: pseudo
+	mode := 't'
 
 	inString := false
 	var stringChar rune
+	inParens := 0
 
 	finishCurrent := func() {
 		val := current.String()
@@ -158,7 +164,6 @@ func parseSimpleSelector(sel string) selectorToken {
 		case '.':
 			tok.classes = append(tok.classes, val)
 		case '[':
-			// parse attr
 			val = strings.TrimSuffix(val, "]")
 			idx := strings.IndexAny(val, "^$*~|=")
 			if idx == -1 {
@@ -196,7 +201,25 @@ func parseSimpleSelector(sel string) selectorToken {
 			current.WriteRune(ch)
 			continue
 		}
-		if mode == ':' && ch != ')' && strings.ContainsRune(current.String(), '(') {
+
+		if ch == '(' {
+			inParens++
+			current.WriteRune(ch)
+			continue
+		} else if ch == ')' {
+			inParens--
+			if inParens < 0 {
+				inParens = 0
+			}
+			current.WriteRune(ch)
+			if inParens == 0 && mode == ':' {
+				finishCurrent()
+				mode = ' '
+			}
+			continue
+		}
+
+		if inParens > 0 {
 			current.WriteRune(ch)
 			continue
 		}
@@ -217,13 +240,6 @@ func parseSimpleSelector(sel string) selectorToken {
 			continue
 		}
 
-		if ch == ')' && mode == ':' {
-			current.WriteRune(ch)
-			finishCurrent()
-			mode = ' '
-			continue
-		}
-
 		current.WriteRune(ch)
 	}
 	finishCurrent()
@@ -231,103 +247,112 @@ func parseSimpleSelector(sel string) selectorToken {
 	return tok
 }
 
-func matchesToken(node *Node, tok selectorToken) bool {
-	if node.NodeType != ElementNode {
-		return false
-	}
 
-	if tok.tag != "" && tok.tag != "*" {
-		if node.NodeName != tok.tag {
+type Matcher func(*Node) bool
+
+func compileSimpleSelector(tok selectorToken) Matcher {
+	return func(node *Node) bool {
+		if node.NodeType != ElementNode {
 			return false
 		}
-	}
-
-	if tok.id != "" {
-		if node.Id != tok.id {
+		if tok.tag != "" && tok.tag != "*" && node.NodeName != tok.tag {
 			return false
 		}
-	}
-
-	for _, cls := range tok.classes {
-		found := false
-		for _, c := range strings.Fields(node.ClassName) {
-			if c == cls {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if tok.id != "" && node.Id != tok.id {
 			return false
 		}
-	}
-
-	for _, attr := range tok.attrs {
-		if !node.HasAttribute(attr.name) {
-			return false
-		}
-		val := node.GetAttribute(attr.name)
-		switch attr.op {
-		case "=":
-			if val != attr.value {
-				return false
-			}
-		case "^=":
-			if !strings.HasPrefix(val, attr.value) {
-				return false
-			}
-		case "$=":
-			if !strings.HasSuffix(val, attr.value) {
-				return false
-			}
-		case "*=":
-			if !strings.Contains(val, attr.value) {
+		for _, cls := range tok.classes {
+			if !node.HasClass(cls) {
 				return false
 			}
 		}
-	}
-
-	for _, pseudo := range tok.pseudos {
-		if pseudo == "first-child" {
-			if node.ParentNode != nil {
-				isFirst := true
-				for _, sib := range node.ParentNode.ChildNodes {
-					if sib.NodeType == ElementNode {
-						if sib != node {
-							isFirst = false
-						}
-						break
-					}
+		for _, attr := range tok.attrs {
+			val, exists := node.Attributes[attr.name]
+			if !exists {
+				return false
+			}
+			if attr.op == "=" && val != attr.value {
+				return false
+			} else if attr.op == "^=" && !strings.HasPrefix(val, attr.value) {
+				return false
+			} else if attr.op == "$=" && !strings.HasSuffix(val, attr.value) {
+				return false
+			} else if attr.op == "*=" && !strings.Contains(val, attr.value) {
+				return false
+			}
+		}
+		for _, pseudo := range tok.pseudos {
+			if pseudo == "first-child" {
+				if node.PreviousElementSibling() != nil {
+					return false
 				}
-				if !isFirst {
+			} else if pseudo == "last-child" {
+				if node.NextElementSibling() != nil {
+					return false
+				}
+			} else if strings.HasPrefix(pseudo, "not(") && strings.HasSuffix(pseudo, ")") {
+				innerSel := pseudo[4 : len(pseudo)-1]
+				innerMatcher := compileSelector(innerSel)
+				if innerMatcher(node) {
 					return false
 				}
 			}
-		} else if pseudo == "last-child" {
-			if node.ParentNode != nil {
-				isLast := true
-				for i := len(node.ParentNode.ChildNodes) - 1; i >= 0; i-- {
-					sib := node.ParentNode.ChildNodes[i]
-					if sib.NodeType == ElementNode {
-						if sib != node {
-							isLast = false
-						}
-						break
-					}
-				}
-				if !isLast {
-					return false
-				}
+			// basic nth-child etc could be added here
+		}
+		return true
+	}
+}
+
+func compileSelector(selector string) Matcher {
+	tokens := parseSelector(selector)
+	if len(tokens) == 0 {
+		return func(*Node) bool { return false }
+	}
+
+	var m Matcher = compileSimpleSelector(tokens[0])
+
+	for i := 1; i < len(tokens); i++ {
+		leftMatcher := m
+		rightMatcher := compileSimpleSelector(tokens[i])
+		comb := tokens[i].combinator
+
+		if comb == ">" {
+			m = func(n *Node) bool {
+				if !rightMatcher(n) { return false }
+				p := n.ParentNode
+				if p == nil || p.NodeType != ElementNode { return false }
+				return leftMatcher(p)
 			}
-		} else if strings.HasPrefix(pseudo, "not(") && strings.HasSuffix(pseudo, ")") {
-			inner := pseudo[4 : len(pseudo)-1]
-			innerTok := parseSimpleSelector(inner)
-			if matchesToken(node, innerTok) {
+		} else if comb == " " || comb == "" {
+			m = func(n *Node) bool {
+				if !rightMatcher(n) { return false }
+				p := n.ParentNode
+				for p != nil && p.NodeType == ElementNode {
+					if leftMatcher(p) { return true }
+					p = p.ParentNode
+				}
+				return false
+			}
+		} else if comb == "+" {
+			m = func(n *Node) bool {
+				if !rightMatcher(n) { return false }
+				p := n.PreviousElementSibling()
+				if p == nil || p.NodeType != ElementNode { return false }
+				return leftMatcher(p)
+			}
+		} else if comb == "~" {
+			m = func(n *Node) bool {
+				if !rightMatcher(n) { return false }
+				p := n.PreviousElementSibling()
+				for p != nil && p.NodeType == ElementNode {
+					if leftMatcher(p) { return true }
+					p = p.PreviousElementSibling()
+				}
 				return false
 			}
 		}
 	}
-
-	return true
+	return m
 }
 
 func querySelectorAllImpl(root *Node, selector string) []*Node {
@@ -350,121 +375,25 @@ func querySelectorAllImpl(root *Node, selector string) []*Node {
 		return results
 	}
 
-	tokens := parseSelector(selector)
-	if len(tokens) == 0 {
-		return nil
-	}
+	matcher := compileSelector(selector)
+	var results []*Node
 
-	// We start with all descendant elements of root
-	var currentNodes []*Node
-	var collectAll func(n *Node)
-	collectAll = func(n *Node) {
+	var dfs func(n *Node)
+	dfs = func(n *Node) {
 		if n.NodeType == ElementNode {
-			currentNodes = append(currentNodes, n)
+			if matcher(n) {
+				results = append(results, n)
+			}
 		}
 		for _, c := range n.ChildNodes {
-			collectAll(c)
+			dfs(c)
 		}
 	}
+
+	// Start searching from descendants of root
 	for _, c := range root.ChildNodes {
-		collectAll(c)
+		dfs(c)
 	}
 
-	// For each token, we filter the currentNodes or traverse
-	for i, tok := range tokens {
-		var nextNodes []*Node
-
-		if i == 0 || tok.combinator == " " {
-			// ... existing code ...
-			if i > 0 {
-				var descendants []*Node
-				seen := make(map[int]bool)
-				for _, n := range currentNodes {
-					var collect func(cn *Node)
-					collect = func(cn *Node) {
-						if cn.NodeType == ElementNode {
-							if !seen[cn.Uid] {
-								seen[cn.Uid] = true
-								descendants = append(descendants, cn)
-							}
-						}
-						for _, cc := range cn.ChildNodes {
-							collect(cc)
-						}
-					}
-					for _, c := range n.ChildNodes {
-						collect(c)
-					}
-				}
-				currentNodes = descendants
-			}
-		} else if tok.combinator == ">" {
-			var children []*Node
-			seen := make(map[int]bool)
-			for _, n := range currentNodes {
-				for _, c := range n.ChildNodes {
-					if c.NodeType == ElementNode && !seen[c.Uid] {
-						seen[c.Uid] = true
-						children = append(children, c)
-					}
-				}
-			}
-			currentNodes = children
-		} else if tok.combinator == "+" {
-			var siblings []*Node
-			seen := make(map[int]bool)
-			for _, n := range currentNodes {
-				if n.ParentNode != nil {
-					found := false
-					for _, sib := range n.ParentNode.ChildNodes {
-						if found {
-							if sib.NodeType == ElementNode {
-								if !seen[sib.Uid] {
-									seen[sib.Uid] = true
-									siblings = append(siblings, sib)
-								}
-								break
-							}
-							continue
-						}
-						if sib == n {
-							found = true
-						}
-					}
-				}
-			}
-			currentNodes = siblings
-		} else if tok.combinator == "~" {
-			var siblings []*Node
-			seen := make(map[int]bool)
-			for _, n := range currentNodes {
-				if n.ParentNode != nil {
-					found := false
-					for _, sib := range n.ParentNode.ChildNodes {
-						if found && sib.NodeType == ElementNode && !seen[sib.Uid] {
-							seen[sib.Uid] = true
-							siblings = append(siblings, sib)
-						}
-						if sib == n {
-							found = true
-						}
-					}
-				}
-			}
-			currentNodes = siblings
-		}
-
-		// Filter currentNodes by token matcher
-		for _, n := range currentNodes {
-			if matchesToken(n, tok) {
-				nextNodes = append(nextNodes, n)
-			}
-		}
-		currentNodes = nextNodes
-		if len(currentNodes) == 0 {
-			break
-		}
-	}
-
-	return currentNodes
+	return results
 }

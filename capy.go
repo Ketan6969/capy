@@ -112,6 +112,39 @@ func (b *Capy) Document() *dom.Node {
 	return b.doc
 }
 
+// Click natively dispatches a click event on the target element inside the JavaScript environment.
+func (b *Capy) Click(node *dom.Node) error {
+	vm := b.ctx.VM()
+	vm.Set("__capyTargetNode", node)
+	script := `
+		if (typeof __capyTargetNode !== 'undefined' && __capyTargetNode !== null) {
+			__capyTargetNode.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+			if (typeof __capyTargetNode.click === 'function') {
+				__capyTargetNode.click();
+			}
+		}
+	`
+	b.ctx.RunScript("click", script)
+	return b.ctx.EventLoop()
+}
+
+// Type natively focuses the element and types text inside the JavaScript environment.
+func (b *Capy) Type(node *dom.Node, text string) error {
+	vm := b.ctx.VM()
+	vm.Set("__capyTargetNode", node)
+	vm.Set("__capyTargetText", text)
+	script := `
+		if (typeof __capyTargetNode !== 'undefined' && __capyTargetNode !== null) {
+			if (typeof __capyTargetNode.focus === 'function') __capyTargetNode.focus();
+			__capyTargetNode.value = __capyTargetText;
+			__capyTargetNode.dispatchEvent(new Event('input', { bubbles: true }));
+			__capyTargetNode.dispatchEvent(new Event('change', { bubbles: true }));
+		}
+	`
+	b.ctx.RunScript("type", script)
+	return b.ctx.EventLoop()
+}
+
 func (b *Capy) resolveURL(base, ref string) string {
 	l := dom.NewLocation(base)
 	return l.ResolveURL(ref)
