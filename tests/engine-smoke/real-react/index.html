@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Real React Test</title>
+  <!-- Load React. -->
+  <!-- Note: when deploying, replace "development.js" with "production.min.js". -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const e = React.createElement;
+
+    class LikeButton extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { liked: false };
+      }
+
+      componentDidMount() {
+        // Automatically click it for the test
+        setTimeout(() => this.setState({ liked: true }), 10);
+      }
+
+      render() {
+        if (this.state.liked) {
+          return e('div', { className: 'result' }, 'You liked this.');
+        }
+
+        return e(
+          'button',
+          { onClick: () => this.setState({ liked: true }) },
+          'Like'
+        );
+      }
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(e(LikeButton));
+  </script>
+</body>
+</html>

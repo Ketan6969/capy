@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
@@ -58,8 +61,8 @@ func main() {
 	for _, suite := range suites {
 		fmt.Printf("Executing suite [%s]... ", suite)
 
-		htmlPath := fmt.Sprintf("tests/%s/index.html", suite)
-		scriptPath := fmt.Sprintf("tests/%s/script.js", suite)
+		htmlPath := fmt.Sprintf("tests/engine-smoke/%s/index.html", suite)
+		scriptPath := fmt.Sprintf("tests/engine-smoke/%s/script.js", suite)
 
 		cmd := exec.Command("./browserless", "-html", htmlPath, "-file", scriptPath, "-stats")
 		var stdout, stderr bytes.Buffer

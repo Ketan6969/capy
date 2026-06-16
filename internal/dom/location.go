@@ -58,3 +58,16 @@ func NewLocation(urlStr string) *Location {
 		Hash:     hash,
 	}
 }
+
+// ResolveURL resolves a relative URL reference against the Location's absolute Href.
+func (l *Location) ResolveURL(ref string) string {
+	base, err := url.Parse(l.Href)
+	if err != nil {
+		return ref
+	}
+	u, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(u).String()
+}

@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
@@ -69,7 +72,7 @@ func main() {
 	fmt.Println("|---------------------------|------------|------------|------------|------------|------------|------------|------------|")
 
 	type benchRes struct {
-		URL string
+		URL                                                                                  string
 		TitleScore, DomScore, ContentScore, LinkScore, NetworkScore, HydrationScore, Overall float64
 	}
 
@@ -98,29 +101,53 @@ func main() {
 				networkScore := minScore(pwRes.NetRequests, blRes.NetRequests)
 
 				pwLinks := make(map[string]bool)
-				for _, l := range pwData.Links { pwLinks[l] = true }
+				for _, l := range pwData.Links {
+					pwLinks[l] = true
+				}
 				blLinks := make(map[string]bool)
-				for _, l := range blData.Links { blLinks[l] = true }
-				
+				for _, l := range blData.Links {
+					blLinks[l] = true
+				}
+
 				overlap := 0
-				for l := range blLinks { if pwLinks[l] { overlap++ } }
+				for l := range blLinks {
+					if pwLinks[l] {
+						overlap++
+					}
+				}
 				linkScore := 100.0
-				if len(pwLinks) > 0 { linkScore = float64(overlap) / float64(len(pwLinks)) * 100.0 }
+				if len(pwLinks) > 0 {
+					linkScore = float64(overlap) / float64(len(pwLinks)) * 100.0
+				}
 
 				hydrationScore := 100.0
 				pwHyd := 0
 				blHyd := 0
-				if pwData.Hydration.Root { pwHyd++ }
-				if pwData.Hydration.Next { pwHyd++ }
-				if pwData.Hydration.App { pwHyd++ }
-				if blData.Hydration.Root { blHyd++ }
-				if blData.Hydration.Next { blHyd++ }
-				if blData.Hydration.App { blHyd++ }
-				
-				if pwHyd > 0 && blHyd == 0 { hydrationScore = 0.0 }
+				if pwData.Hydration.Root {
+					pwHyd++
+				}
+				if pwData.Hydration.Next {
+					pwHyd++
+				}
+				if pwData.Hydration.App {
+					pwHyd++
+				}
+				if blData.Hydration.Root {
+					blHyd++
+				}
+				if blData.Hydration.Next {
+					blHyd++
+				}
+				if blData.Hydration.App {
+					blHyd++
+				}
+
+				if pwHyd > 0 && blHyd == 0 {
+					hydrationScore = 0.0
+				}
 
 				overall := (titleScore * 0.20) + (domScore * 0.20) + (contentScore * 0.25) + (linkScore * 0.15) + (networkScore * 0.10) + (hydrationScore * 0.10)
-				
+
 				resultsChan <- benchRes{
 					URL: url, TitleScore: titleScore, DomScore: domScore, ContentScore: contentScore,
 					LinkScore: linkScore, NetworkScore: networkScore, HydrationScore: hydrationScore, Overall: overall,
@@ -138,7 +165,7 @@ func main() {
 	for i := 0; i < len(targets); i++ {
 		res := <-resultsChan
 		totalScore += res.Overall
-		fmt.Printf("| %-25s | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | **%5.0f%%** |\n", 
+		fmt.Printf("| %-25s | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | %5.0f%%     | **%5.0f%%** |\n",
 			urlShort(res.URL), res.TitleScore, res.DomScore, res.ContentScore, res.LinkScore, res.NetworkScore, res.HydrationScore, res.Overall)
 	}
 
@@ -150,12 +177,12 @@ func main() {
 func runCommand(binary string, args ...string) Result {
 	cmdArgs := append([]string{"-v", binary}, args...)
 	cmd := exec.Command("/usr/bin/time", cmdArgs...)
-	
+
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
-	
+
 	cmd.Run()
 
 	outStr := out.String()

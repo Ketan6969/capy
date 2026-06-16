@@ -73,7 +73,7 @@ func TestHTMLParsing(t *testing.T) {
 
 func TestJSIntegration(t *testing.T) {
 	vm := goja.New()
-	
+
 	htmlContent := `<html><body><div id="app">Initial</div></body></html>`
 	doc, err := ParseHTML(htmlContent)
 	if err != nil {

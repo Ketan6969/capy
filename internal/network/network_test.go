@@ -19,7 +19,7 @@ func TestFetch(t *testing.T) {
 			body, _ := io.ReadAll(r.Body)
 			var data map[string]interface{}
 			_ = json.Unmarshal(body, &data)
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(fmt.Sprintf(`{"received": true, "method": "POST", "name": "%s"}`, data["name"])))

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/browserless/runtime/internal/engine"
+	"github.com/browserless/runtime/internal/polyfills"
 	"github.com/dop251/goja"
 )
 
@@ -32,6 +33,11 @@ func NewNetworkManager() *NetworkManager {
 		},
 		Optimizer: NewOptimizer(),
 	}
+}
+
+// CookieJar returns the underlying cookie jar.
+func (nm *NetworkManager) CookieJar() http.CookieJar {
+	return nm.client.Jar
 }
 
 // RawResponse represents the serializable HTTP response structure exposed to Goja.
@@ -94,41 +100,7 @@ func (nm *NetworkManager) SetupNetworkInstrumented(ctx *engine.Context, counter 
 		}()
 	})
 
-	// Inject the ES6 standard fetch shim
-	fetchScript := `
-		(function() {
-			class Response {
-				constructor(rawRes) {
-					this.status = rawRes.status;
-					this.statusText = rawRes.statusText;
-					this.ok = this.status >= 200 && this.status < 300;
-					this._bodyText = rawRes.body;
-					this.headers = new Map(Object.entries(rawRes.headers || {}));
-				}
-
-				async text() {
-					return this._bodyText;
-				}
-
-				async json() {
-					return JSON.parse(this._bodyText);
-				}
-			}
-
-			globalThis.fetch = function(url, options) {
-				return new Promise((resolve, reject) => {
-					_goFetch(url, options || {}, (err, rawRes) => {
-						if (err) {
-							reject(new Error(err));
-						} else {
-							resolve(new Response(rawRes));
-						}
-					});
-				});
-			};
-		})();
-	`
-	_, _ = vm.RunString(fetchScript)
+	_, _ = vm.RunString(polyfills.FetchScript)
 }
 
 func (nm *NetworkManager) GetTotalRequests() int {

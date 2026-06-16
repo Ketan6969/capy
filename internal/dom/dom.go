@@ -2,8 +2,12 @@ package dom
 
 import (
 	"fmt"
+	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/browserless/runtime/internal/polyfills"
 
 	"github.com/browserless/runtime/internal/storage"
 	"github.com/dop251/goja"
@@ -14,9 +18,9 @@ import (
 type NodeType = int
 
 const (
-	ElementNode       NodeType = 1
-	TextNode          NodeType = 3
-	DocumentNode      NodeType = 9
+	ElementNode      NodeType = 1
+	TextNode         NodeType = 3
+	DocumentNode     NodeType = 9
 	DocumentFragment NodeType = 11
 )
 
@@ -25,44 +29,10 @@ type Event struct {
 	Type string
 }
 
-// EventListener is a callback function for DOM Events.
-type EventListener func(event *Event)
-
-// EventTarget handles registration and dispatching of events.
-type EventTarget struct {
-	listeners map[string][]EventListener
-}
-
-// NewEventTarget creates a new EventTarget.
-func NewEventTarget() *EventTarget {
-	return &EventTarget{
-		listeners: make(map[string][]EventListener),
-	}
-}
-
-func (et *EventTarget) AddEventListener(eventType string, listener EventListener) {
-	if et.listeners == nil {
-		et.listeners = make(map[string][]EventListener)
-	}
-	et.listeners[eventType] = append(et.listeners[eventType], listener)
-}
-
-func (et *EventTarget) DispatchEvent(event *Event) bool {
-	if et.listeners == nil {
-		return true
-	}
-	listeners := et.listeners[event.Type]
-	for _, l := range listeners {
-		l(event)
-	}
-	return true
-}
-
 var globalNodeUidCounter = 0
 
 // Node represents a DOM Node in our unified DOM model.
 type Node struct {
-	*EventTarget
 	Uid        int                    `json:"uid"`
 	NodeType   NodeType               `json:"nodeType"`
 	NodeName   string                 `json:"nodeName"`
@@ -82,18 +52,19 @@ type Node struct {
 	Width      interface{}            `json:"width,omitempty"`
 	Height     interface{}            `json:"height,omitempty"`
 	Checked    bool                   `json:"checked,omitempty"`
+	Expandos   map[string]interface{} `json:"expandos,omitempty"`
 }
 
 // NewNode creates a new Node.
 func NewNode(nodeType NodeType, nodeName string) *Node {
 	globalNodeUidCounter++
 	return &Node{
-		Uid:         globalNodeUidCounter,
-		EventTarget: NewEventTarget(),
-		NodeType:    nodeType,
-		NodeName:    nodeName,
-		Attributes:  make(map[string]string),
-		Style:       make(map[string]interface{}),
+		Uid:        globalNodeUidCounter,
+		NodeType:   nodeType,
+		NodeName:   nodeName,
+		Attributes: make(map[string]string),
+		Expandos:   make(map[string]interface{}),
+		Style:      make(map[string]interface{}),
 	}
 }
 
@@ -116,7 +87,7 @@ func (n *Node) InsertBefore(newNode, referenceNode *Node) *Node {
 	if referenceNode == nil {
 		return n.AppendChild(newNode)
 	}
-	
+
 	if newNode.ParentNode != nil {
 		newNode.ParentNode.RemoveChild(newNode)
 	}
@@ -226,7 +197,7 @@ func (n *Node) getInnerTextRecursive(sb *strings.Builder) {
 func (n *Node) GetInnerText() string {
 	var sb strings.Builder
 	n.getInnerTextRecursive(&sb)
-	
+
 	text := sb.String()
 	var lines []string
 	for _, l := range strings.Split(text, "\n") {
@@ -282,12 +253,12 @@ func (n *Node) GetAttribute(name string) string {
 	} else if name == "class" {
 		return n.ClassName
 	}
-	
+
 	val, ok := n.Attributes[name]
 	if !ok {
 		return ""
 	}
-	
+
 	if (name == "href" || name == "src") && val != "" {
 		docURL := n.getDocumentURL()
 		if docURL != "" {
@@ -425,7 +396,7 @@ func (n *Node) QuerySelectorAll(selector string) []*Node {
 				return false
 			}
 			p := part
-			
+
 			// 1. Tag name
 			tagName := ""
 			idx := strings.IndexAny(p, "#.[")
@@ -441,7 +412,7 @@ func (n *Node) QuerySelectorAll(selector string) []*Node {
 					return false
 				}
 			}
-			
+
 			// 2. ID, Classes, Attributes
 			for len(p) > 0 {
 				if p[0] == '#' {
@@ -484,7 +455,7 @@ func (n *Node) QuerySelectorAll(selector string) []*Node {
 					}
 					attrExpr := p[1:idx]
 					p = p[idx+1:]
-					
+
 					eqIdx := strings.Index(attrExpr, "=")
 					if eqIdx == -1 {
 						if !node.HasAttribute(attrExpr) {
@@ -531,7 +502,7 @@ func (n *Node) QuerySelectorAll(selector string) []*Node {
 	}
 
 	dfs(n, 0)
-	
+
 	// Deduplicate in case multiple paths matched
 	dedup := make([]*Node, 0, len(results))
 	seen := make(map[int]bool)
@@ -706,12 +677,12 @@ func convertNetNode(n *html.Node) *Node {
 
 	globalNodeUidCounter++
 	converted := &Node{
-		Uid:         globalNodeUidCounter,
-		EventTarget: NewEventTarget(),
-		NodeType:    nodeType,
-		NodeName:    nodeName,
-		NodeValue:   nodeValue,
-		Attributes:  make(map[string]string),
+		Uid:        globalNodeUidCounter,
+		NodeType:   nodeType,
+		NodeName:   nodeName,
+		NodeValue:  nodeValue,
+		Attributes: make(map[string]string),
+		Expandos:   make(map[string]interface{}),
 	}
 
 	if nodeType == ElementNode {
@@ -729,15 +700,71 @@ func convertNetNode(n *html.Node) *Node {
 }
 
 // SetupDOM initializes a standard DOM structure inside a Goja runtime environment.
+
+// DispatchLifecycleEvents triggers the standard DOMContentLoaded and load events.
+func DispatchLifecycleEvents(vm *goja.Runtime) {
+	vm.RunString(`
+		(function() {
+			document.readyState = "interactive";
+			const dcl = new Event("DOMContentLoaded");
+			document.dispatchEvent(dcl);
+			
+			document.readyState = "complete";
+			const load = new Event("load");
+			window.dispatchEvent(load);
+		})();
+	`)
+}
+
+// SetupCookies links the Goja document object to the network cookie jar.
+func SetupCookies(vm *goja.Runtime, jar http.CookieJar, docURL string) {
+	if jar == nil || docURL == "" {
+		return
+	}
+	u, err := url.Parse(docURL)
+	if err != nil {
+		return
+	}
+	if u.Host == "" {
+		u, _ = url.Parse("http://localhost/")
+	}
+
+	vm.Set("_goGetCookies", func() string {
+		cookies := jar.Cookies(u)
+		var sb strings.Builder
+		for i, c := range cookies {
+			if i > 0 {
+				sb.WriteString("; ")
+			}
+			sb.WriteString(c.Name + "=" + c.Value)
+		}
+		return sb.String()
+	})
+
+	vm.Set("_goSetCookie", func(cookieStr string) {
+		// A simple parser for the first key=value
+		parts := strings.SplitN(cookieStr, ";", 2)
+		kv := strings.SplitN(strings.TrimSpace(parts[0]), "=", 2)
+		if len(kv) == 2 {
+			c := &http.Cookie{
+				Name:  strings.TrimSpace(kv[0]),
+				Value: strings.TrimSpace(kv[1]),
+			}
+			jar.SetCookies(u, []*http.Cookie{c})
+		}
+	})
+
+	vm.RunString(polyfills.CookiesScript)
+}
+
 func SetupDOM(vm *goja.Runtime, documentRoot *Node, docURL string) {
 	// Map Go method names to camelCase in JavaScript
 	vm.SetFieldNameMapper(goja.UncapFieldNameMapper())
 
 	if documentRoot == nil {
 		documentRoot = &Node{
-			EventTarget: NewEventTarget(),
-			NodeType:    DocumentNode,
-			NodeName:    "#document",
+			NodeType: DocumentNode,
+			NodeName: "#document",
 		}
 		htmlNode := NewNode(ElementNode, "HTML")
 		headNode := NewNode(ElementNode, "HEAD")
@@ -768,7 +795,7 @@ func SetupDOM(vm *goja.Runtime, documentRoot *Node, docURL string) {
 	window.Set("location", location)
 	if documentRoot != nil {
 		documentRoot.Location = location
-		
+
 		// Pre-resolve all URLs so goja's mapped Href and Src fields contain absolute paths
 		var resolveURLs func(n *Node)
 		resolveURLs = func(n *Node) {
@@ -787,636 +814,12 @@ func SetupDOM(vm *goja.Runtime, documentRoot *Node, docURL string) {
 	}
 
 	// Define standard DOM getters/setters on the *Node prototype
-	setupScript := `
-		(function() {
-			if (typeof document === 'undefined') return;
-			const proto = Object.getPrototypeOf(document);
-			if (!proto) return;
-
-			// Add generic polyfills for global APIs that libraries expect
-			globalThis.window = globalThis;
-			globalThis.setTimeout = function(cb) { if (cb) { try { cb(); } catch(e) {} } return 1; };
-			globalThis.clearTimeout = function() {};
-			globalThis.setInterval = function() { return 1; };
-			globalThis.clearInterval = function() {};
-			globalThis.requestAnimationFrame = function(cb) { return setTimeout(cb, 16); };
-			globalThis.cancelAnimationFrame = function() {};
-
-			// performance API stub
-			if (typeof performance === 'undefined') {
-				const _perfStart = Date.now();
-				globalThis.performance = {
-					now: function() { return Date.now() - _perfStart; },
-					mark: function() {},
-					measure: function() {},
-					clearMarks: function() {},
-					clearMeasures: function() {},
-					getEntriesByName: function() { return []; },
-					getEntriesByType: function() { return []; },
-					getEntries: function() { return []; },
-					timing: { navigationStart: Date.now() },
-					navigation: { type: 0, redirectCount: 0 },
-					resourceTimingBufferSize: 150,
-					setResourceTimingBufferSize: function() {},
-					clearResourceTimings: function() {},
-					observe: function() {}
-				};
-			}
-
-			// XMLHttpRequest stub
-			if (typeof XMLHttpRequest === 'undefined') {
-				globalThis.XMLHttpRequest = function() {
-					this.readyState = 0;
-					this.status = 0;
-					this.responseText = '';
-					this.onreadystatechange = null;
-					this.onload = null;
-					this.onerror = null;
-				};
-				globalThis.XMLHttpRequest.prototype.open = function() {};
-				globalThis.XMLHttpRequest.prototype.send = function() {};
-				globalThis.XMLHttpRequest.prototype.setRequestHeader = function() {};
-				globalThis.XMLHttpRequest.prototype.abort = function() {};
-				globalThis.XMLHttpRequest.prototype.addEventListener = function() {};
-				globalThis.XMLHttpRequest.UNSENT = 0;
-				globalThis.XMLHttpRequest.OPENED = 1;
-				globalThis.XMLHttpRequest.HEADERS_RECEIVED = 2;
-				globalThis.XMLHttpRequest.LOADING = 3;
-				globalThis.XMLHttpRequest.DONE = 4;
-			}
-
-			// screen stub
-			if (typeof screen === 'undefined') {
-				globalThis.screen = { width: 1920, height: 1080, availWidth: 1920, availHeight: 1080, colorDepth: 24, pixelDepth: 24 };
-			}
-			if (typeof devicePixelRatio === 'undefined') { globalThis.devicePixelRatio = 1; }
-			if (typeof matchMedia === 'undefined') { globalThis.matchMedia = function() { return { matches: false, addListener: function(){}, removeListener: function(){}, addEventListener: function(){} }; }; }
-
-			// Wrap Object.defineProperty to prevent Goja Host Object crashes
-			const origDefineProperty = Object.defineProperty;
-			const defineFallback = new WeakMap();
-			Object.defineProperty = function(obj, prop, descriptor) {
-				try {
-					return origDefineProperty(obj, prop, descriptor);
-				} catch (e) {
-					const msg = e.message || '';
-					// Silently absorb errors caused by Goja's host-object limitations:
-					//   "cannot be made configurable" — non-configurable Go-backed property
-					//   "getter must be a function"   — accessor descriptor on a host object
-					//   "setter must be a function"   — same, for setters
-					if (msg.includes('cannot be made configurable')) {
-						if (descriptor && 'value' in descriptor) {
-							try { obj[prop] = descriptor.value; } catch(err) {}
-							let data = defineFallback.get(obj);
-							if (!data) { data = {}; defineFallback.set(obj, data); }
-							data[prop] = descriptor.value;
-						}
-						return obj;
-					}
-					if (msg.includes('getter must be a function') || msg.includes('setter must be a function')) {
-						// Accessor descriptor on a host object — skip silently
-						return obj;
-					}
-					throw e;
-				}
-			};
-
-			// jQuery interceptor to support expandos on Host Objects
-			const jqDataStore = {};
-			let originalJQuery = undefined;
-			
-			function defineExpando(expando) {
-				if (proto.__jqPatched && proto.__jqPatched[expando]) return;
-				if (!proto.__jqPatched) proto.__jqPatched = {};
-				proto.__jqPatched[expando] = true;
-				
-				for (let i = 0; i <= 2000; i++) {
-					const prop = i === 0 ? expando : expando + i;
-					Object.defineProperty(proto, prop, {
-						get: function() {
-							const uid = this.uid;
-							if (!uid) return undefined;
-							return jqDataStore[uid] ? jqDataStore[uid][prop] : undefined;
-						},
-						set: function(v) {
-							const uid = this.uid;
-							if (!uid) {
-								Object.defineProperty(this, prop, {value: v, writable: true, configurable: true});
-								return;
-							}
-							if (!jqDataStore[uid]) jqDataStore[uid] = {};
-							jqDataStore[uid][prop] = v;
-						},
-						configurable: true,
-						enumerable: false
-					});
-				}
-			}
-
-			Object.defineProperty(globalThis, 'jQuery', {
-				get: function() { return originalJQuery; },
-				set: function(val) {
-					originalJQuery = val;
-					if (val && val.expando) {
-						defineExpando(val.expando);
-					}
-				},
-				configurable: true
-			});
-			
-			let originalDollar = undefined;
-			Object.defineProperty(globalThis, '$', {
-				get: function() { return originalDollar !== undefined ? originalDollar : originalJQuery; },
-				set: function(val) {
-					originalDollar = val;
-				},
-				configurable: true
-			});
-
-			Object.defineProperty(proto, 'implementation', {
-				get() {
-					if (Number(this.nodeType) === 9) { // DocumentNode
-						return {
-							createHTMLDocument: function() {
-								const doc = {
-									nodeType: 9,
-									nodeName: '#document',
-									childNodes: [],
-									createElement: function(tag) { return document.createElement(tag); },
-									createDocumentFragment: function() { return document.createDocumentFragment(); },
-									body: document.createElement('body')
-								};
-								return doc;
-							}
-						};
-					}
-					return undefined;
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-			globalThis.Event = class Event {
-				constructor(type) {
-					this.type = type;
-				}
-			};
-
-			proto.addEventListener = function(type, callback) {
-				if (!this._listeners) {
-					this._listeners = {};
-				}
-				if (!this._listeners[type]) {
-					this._listeners[type] = [];
-				}
-				this._listeners[type].push(callback);
-			};
-
-			proto.dispatchEvent = function(event) {
-				if (!event || !event.type) return true;
-				if (this._listeners && this._listeners[event.type]) {
-					const list = this._listeners[event.type];
-					for (let i = 0; i < list.length; i++) {
-						try {
-							list[i](event);
-						} catch (e) {
-							console.error("Event listener error:", e);
-						}
-					}
-				}
-				return true;
-			};
-
-			Object.defineProperty(proto, 'innerHTML', {
-				get() { 
-					if (typeof this.getInnerHTML === 'function') {
-						return this.getInnerHTML(); 
-					}
-					return undefined;
-				},
-				set(val) { 
-					if (typeof this.setInnerHTML === 'function') {
-						this.setInnerHTML(val); 
-					}
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-			Object.defineProperty(proto, 'outerHTML', {
-				get() { 
-					if (typeof this.getOuterHTML === 'function') {
-						return this.getOuterHTML(); 
-					}
-					return undefined;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-			Object.defineProperty(proto, 'innerText', {
-				get() { 
-					if (typeof this.getInnerText === 'function') {
-						return this.getInnerText(); 
-					}
-					return undefined;
-				},
-				set(val) { 
-					if (typeof this.setTextContent === 'function') {
-						this.setTextContent(val); 
-					}
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-
-			Object.defineProperty(proto, 'textContent', {
-				get() { 
-					if (typeof this.getTextContent === 'function') {
-						return this.getTextContent(); 
-					}
-					return undefined;
-				},
-				set(val) { 
-					if (typeof this.setTextContent === 'function') {
-						this.setTextContent(val); 
-					}
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-			Object.defineProperty(proto, 'firstChild', {
-				get() { 
-					if (this.childNodes && this.childNodes.length > 0) {
-						return this.childNodes[0];
-					}
-					return null;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-
-			Object.defineProperty(proto, 'lastChild', {
-				get() { 
-					if (this.childNodes && this.childNodes.length > 0) {
-						return this.childNodes[this.childNodes.length - 1];
-					}
-					return null;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-
-			proto.remove = function() {
-				if (this.parentNode) {
-					this.parentNode.removeChild(this);
-				}
-			};
-
-			proto.getBoundingClientRect = function() {
-				return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 };
-			};
-
-			Object.defineProperty(proto, 'classList', {
-				get() {
-					const node = this;
-					return {
-						add: function(...classes) {
-							const current = (node.className || '').split(' ').filter(c => c);
-							for (const cls of classes) {
-								if (current.indexOf(cls) === -1) current.push(cls);
-							}
-							node.className = current.join(' ');
-						},
-						remove: function(...classes) {
-							const current = (node.className || '').split(' ').filter(c => c);
-							const updated = current.filter(c => classes.indexOf(c) === -1);
-							node.className = updated.join(' ');
-						},
-						toggle: function(cls) {
-							const current = (node.className || '').split(' ').filter(c => c);
-							const idx = current.indexOf(cls);
-							if (idx === -1) {
-								current.push(cls);
-								node.className = current.join(' ');
-								return true;
-							} else {
-								current.splice(idx, 1);
-								node.className = current.join(' ');
-								return false;
-							}
-						},
-						contains: function(cls) {
-							const current = (node.className || '').split(' ').filter(c => c);
-							return current.indexOf(cls) !== -1;
-						}
-					};
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-			if (typeof Intl === 'undefined') {
-				globalThis.Intl = {
-					DateTimeFormat: function() {
-						return { format: function() { return ''; }, resolvedOptions: function() { return { locale: 'en-US' }; } };
-					},
-					NumberFormat: function() {
-						return { format: function(n) { return n ? n.toString() : ''; }, resolvedOptions: function() { return { locale: 'en-US' }; } };
-					}
-				};
-			}
-
-			globalThis.Window = function Window() {};
-
-			globalThis.__raf_count__ = 0;
-			globalThis.requestAnimationFrame = function(callback) {
-				if (globalThis.__raf_count__++ < 10) {
-					return setTimeout(callback, 10);
-				}
-				return 0;
-			};
-			globalThis.cancelAnimationFrame = function(id) {
-				clearTimeout(id);
-			};
-
-			globalThis.getComputedStyle = function(el) {
-				return {
-					getPropertyValue: function() { return ''; },
-					setProperty: function() {},
-					removeProperty: function() {}
-				};
-			};
-
-			globalThis.HTMLCanvasElement = function() {};
-			globalThis.HTMLCanvasElement.prototype.getContext = function() {
-				return {
-					fillRect: function() {},
-					clearRect: function() {},
-					getImageData: function() { return { data: [] }; },
-					putImageData: function() {},
-					createImageData: function() { return { data: [] }; },
-					setTransform: function() {},
-					drawImage: function() {},
-					save: function() {},
-					fillText: function() {},
-					restore: function() {},
-					beginPath: function() {},
-					moveTo: function() {},
-					lineTo: function() {},
-					closePath: function() {},
-					stroke: function() {},
-					translate: function() {},
-					scale: function() {},
-					rotate: function() {},
-					arc: function() {},
-					fill: function() {},
-					measureText: function() { return { width: 0 }; },
-					transform: function() {},
-					rect: function() {},
-					clip: function() {}
-				};
-			};
-
-			globalThis.IntersectionObserver = function() {
-				this.observe = function() {};
-				this.unobserve = function() {};
-				this.disconnect = function() {};
-			};
-
-			globalThis.ResizeObserver = function() {
-				this.observe = function() {};
-				this.unobserve = function() {};
-				this.disconnect = function() {};
-			};
-
-			globalThis.MutationObserver = function() {
-				this.observe = function() {};
-				this.disconnect = function() {};
-				this.takeRecords = function() { return []; };
-			};
-			
-			globalThis.PerformanceObserver = function() {
-				this.observe = function() {};
-				this.disconnect = function() {};
-			};
-
-			Object.defineProperty(proto, 'href', {
-				get() { 
-					if (typeof this.getAttribute === 'function') {
-						return this.getAttribute('href'); 
-					}
-					return this.Href || '';
-				},
-				set(val) { 
-					if (typeof this.setAttribute === 'function') {
-						this.setAttribute('href', val); 
-					}
-				},
-				configurable: true,
-				enumerable: false
-			});
-			
-			Object.defineProperty(proto, 'src', {
-				get() { 
-					if (typeof this.getAttribute === 'function') {
-						return this.getAttribute('src'); 
-					}
-					return this.Src || '';
-				},
-				set(val) { 
-					if (typeof this.setAttribute === 'function') {
-						this.setAttribute('src', val); 
-					}
-				},
-				configurable: true,
-				enumerable: false
-			});
-
-			globalThis.Worker = function() {
-				this.postMessage = function() {};
-				this.terminate = function() {};
-			};
-			globalThis.ServiceWorker = function() {};
-			
-			globalThis.crypto = {
-				getRandomValues: function(arr) { return arr; },
-				subtle: {
-					digest: function() { return Promise.resolve(new ArrayBuffer()); },
-					encrypt: function() { return Promise.resolve(new ArrayBuffer()); },
-					decrypt: function() { return Promise.resolve(new ArrayBuffer()); },
-					sign: function() { return Promise.resolve(new ArrayBuffer()); },
-					verify: function() { return Promise.resolve(true); }
-				}
-			};
-
-			globalThis.indexedDB = {
-				open: function() { return { onupgradeneeded: null, onsuccess: null, onerror: null }; },
-				deleteDatabase: function() { return { onsuccess: null, onerror: null }; }
-			};
-
-			globalThis.CustomEvent = function(type, params) {
-				const e = new globalThis.Event(type);
-				if (params) e.detail = params.detail;
-				return e;
-			};
-			globalThis.IntersectionObserver = class IntersectionObserver {
-				constructor(callback, options) {
-					this.callback = callback;
-				}
-				observe(target) {
-					if (this.callback) {
-						Promise.resolve().then(() => {
-							this.callback([{ target: target, isIntersecting: true, intersectionRatio: 1.0 }]);
-						});
-					}
-				}
-				unobserve(target) {}
-				disconnect() {}
-			};
-
-			globalThis.ResizeObserver = class ResizeObserver {
-				constructor(callback) {}
-				observe(target) {}
-				unobserve(target) {}
-				disconnect() {}
-			};
-
-			globalThis.MutationObserver = class MutationObserver {
-				constructor(callback) {}
-				observe(target, options) {}
-				disconnect() {}
-				takeRecords() { return []; }
-			};
-
-			globalThis.history = {
-				pushState: function() {},
-				replaceState: function() {},
-				go: function() {},
-				back: function() {},
-				forward: function() {},
-				length: 1
-			};
-			globalThis.URLSearchParams = class URLSearchParams {
-				constructor(init) {
-					this._params = new Map();
-					if (typeof init === 'string') {
-						if (init.startsWith('?')) init = init.slice(1);
-						const pairs = init.split('&');
-						for (const p of pairs) {
-							if (!p) continue;
-							const idx = p.indexOf('=');
-							if (idx === -1) {
-								this.append(decodeURIComponent(p), '');
-							} else {
-								this.append(decodeURIComponent(p.slice(0, idx)), decodeURIComponent(p.slice(idx+1)));
-							}
-						}
-					}
-				}
-				append(name, value) {
-					if (!this._params.has(name)) this._params.set(name, []);
-					this._params.get(name).push(value);
-				}
-				get(name) {
-					const vals = this._params.get(name);
-					return vals ? vals[0] : null;
-				}
-				getAll(name) {
-					return this._params.get(name) || [];
-				}
-				has(name) {
-					return this._params.has(name);
-				}
-				set(name, value) {
-					this._params.set(name, [value]);
-				}
-				delete(name) {
-					this._params.delete(name);
-				}
-				toString() {
-					const parts = [];
-					for (const [k, v] of this._params) {
-						for (const val of v) {
-							parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(val));
-						}
-					}
-					return parts.join('&');
-				}
-			};
-
-			Object.defineProperty(proto, 'body', {
-				get() {
-					if (Number(this.nodeType) === 9) { // DocumentNode
-						if (typeof this.getBody === 'function') {
-							return this.getBody();
-						}
-					}
-					return undefined;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-
-			Object.defineProperty(proto, 'head', {
-				get() {
-					if (Number(this.nodeType) === 9) { // DocumentNode
-						if (typeof this.getHead === 'function') {
-							return this.getHead();
-						}
-					}
-					return undefined;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-
-			Object.defineProperty(proto, 'documentElement', {
-				get() {
-					if (Number(this.nodeType) === 9) { // DocumentNode
-						if (typeof this.getDocumentElement === 'function') {
-							return this.getDocumentElement();
-						}
-					}
-					return undefined;
-				},
-				set(val) {},
-				configurable: true,
-				enumerable: false
-			});
-
-			proto.write = function(markup) {
-				const body = document.body || document;
-				const temp = document.createElement('div');
-				temp.innerHTML = markup;
-				while (temp.childNodes && temp.childNodes.length > 0) {
-					body.appendChild(temp.childNodes[0]);
-				}
-			};
-
-			// Bind length getter to the Storage prototype
-			if (typeof localStorage !== 'undefined') {
-				const storageProto = Object.getPrototypeOf(localStorage);
-				if (storageProto) {
-					Object.defineProperty(storageProto, 'length', {
-						get() { 
-							if (typeof this.getLength === 'function') {
-								return this.getLength(); 
-							}
-							return 0;
-						},
-						configurable: true,
-						enumerable: false
-					});
-				}
-			}
-		})();
-	`
-	_, _ = vm.RunString(setupScript)
+	_, err := vm.RunString(polyfills.DomScript)
+	if err != nil {
+		slog.Error("Error executing dom polyfills", "error", err)
+	}
+	_, err = vm.RunString(polyfills.XhrScript)
+	if err != nil {
+		slog.Error("Error executing xhr polyfills", "error", err)
+	}
 }

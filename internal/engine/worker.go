@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 
@@ -38,7 +39,7 @@ func (wr *WorkerRegistry) SpawnWorker(scriptPath string, onMessageCallback goja.
 	// Create a clean child context linked to the parent context
 	workerCtx := NewContext(wr.parent.ctx)
 	workerCtx.parent = wr.parent
-	
+
 	wr.mu.Lock()
 	wr.workers[id] = workerCtx
 	wr.mu.Unlock()
@@ -58,7 +59,7 @@ func (wr *WorkerRegistry) SpawnWorker(scriptPath string, onMessageCallback goja.
 
 		content, err := os.ReadFile(scriptPath)
 		if err != nil {
-			fmt.Printf("Worker error reading script %s: %v\n", scriptPath, err)
+			slog.Error("Worker error reading script", "script", scriptPath, "error", err)
 			workerCtx.WgDone()
 			return
 		}
@@ -69,16 +70,16 @@ func (wr *WorkerRegistry) SpawnWorker(scriptPath string, onMessageCallback goja.
 		// Execute the script directly on the VM synchronously before entering event loop
 		_, err = workerCtx.vm.RunScript(scriptPath, string(content))
 		if err != nil {
-			fmt.Printf("Worker script execution error %s: %v\n", scriptPath, err)
+			slog.Error("Worker script execution error", "script", scriptPath, "error", err)
 			workerCtx.setError(err)
 			workerCtx.cancel()
 			workerCtx.WgDone()
 			return
 		}
-		
+
 		// Startup complete, decrement the initial WaitGroup boost
 		workerCtx.WgDone()
-		
+
 		_ = workerCtx.EventLoop()
 	}()
 

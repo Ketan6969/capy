@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="http://example.com/assets/">
+  <title>Events and Cookies Test</title>
+</head>
+<body>
+  <div id="parent">
+    <button id="child">Click Me</button>
+  </div>
+
+  <script>
+    // 1. Test Base Tag URL resolution
+    const link = document.createElement("a");
+    link.href = "test.js";
+    console.log("RESOLVED URL:", link.href);
+
+    // 2. Test Cookies
+    document.cookie = "session_id=12345; path=/";
+    console.log("COOKIE:", document.cookie);
+
+    // 3. Test Event Bubbling
+    const parent = document.getElementById("parent");
+    const child = document.getElementById("child");
+    
+    let bubbleTrace = [];
+
+    // Capturing phase (should fire first)
+    parent.addEventListener("click", () => {
+      bubbleTrace.push("parent-capture");
+    }, true);
+
+    child.addEventListener("click", () => {
+      bubbleTrace.push("child-target");
+    });
+
+    // Bubbling phase (should fire last)
+    parent.addEventListener("click", () => {
+      bubbleTrace.push("parent-bubble");
+    });
+
+    const evt = new Event("click", { bubbles: true });
+    child.dispatchEvent(evt);
+
+    console.log("EVENT TRACE:", bubbleTrace.join(" -> "));
+  </script>
+</body>
+</html>

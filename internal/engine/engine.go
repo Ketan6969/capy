@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -234,6 +235,14 @@ func (c *Context) Close() {
 	}
 }
 
+func formatArgs(args []interface{}) string {
+	strs := make([]string, len(args))
+	for i, arg := range args {
+		strs[i] = fmt.Sprint(arg)
+	}
+	return strings.Join(strs, " ")
+}
+
 func (c *Context) setupBasicPrimitives() {
 	// 1. Setup Console
 	console := c.vm.NewObject()
@@ -242,7 +251,7 @@ func (c *Context) setupBasicPrimitives() {
 		for i, arg := range call.Arguments {
 			args[i] = arg.Export()
 		}
-		fmt.Println(args...)
+		slog.Info(formatArgs(args), "source", "console.log")
 		return goja.Undefined()
 	})
 	console.Set("error", func(call goja.FunctionCall) goja.Value {
@@ -250,8 +259,47 @@ func (c *Context) setupBasicPrimitives() {
 		for i, arg := range call.Arguments {
 			args[i] = arg.Export()
 		}
-		fmt.Print("ERROR: ")
-		fmt.Println(args...)
+		slog.Error(formatArgs(args), "source", "console.error")
+		return goja.Undefined()
+	})
+	console.Set("warn", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		slog.Warn(formatArgs(args), "source", "console.warn")
+		return goja.Undefined()
+	})
+	console.Set("info", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		slog.Info(formatArgs(args), "source", "console.info")
+		return goja.Undefined()
+	})
+	console.Set("debug", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		slog.Debug(formatArgs(args), "source", "console.debug")
+		return goja.Undefined()
+	})
+	console.Set("dir", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		slog.Info(formatArgs(args), "source", "console.dir")
+		return goja.Undefined()
+	})
+	console.Set("table", func(call goja.FunctionCall) goja.Value {
+		args := make([]interface{}, len(call.Arguments))
+		for i, arg := range call.Arguments {
+			args[i] = arg.Export()
+		}
+		slog.Info(formatArgs(args), "source", "console.table")
 		return goja.Undefined()
 	})
 	c.vm.Set("console", console)
