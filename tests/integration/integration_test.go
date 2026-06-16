@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/browserless/runtime/internal/dom"
-	"github.com/browserless/runtime/internal/engine"
-	"github.com/browserless/runtime/internal/network"
+	"github.com/Ketan6969/capy/internal/dom"
+	"github.com/Ketan6969/capy/internal/engine"
+	"github.com/Ketan6969/capy/internal/network"
 	"github.com/dop251/goja"
 )
 
-// Helpers duplicated from cmd/browserless for testing
+// Helpers duplicated from cmd/capy for testing
 func loadHTML(pathOrURL string) (string, error) {
 	if strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://") {
 		resp, err := http.Get(pathOrURL)

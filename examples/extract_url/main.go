@@ -4,12 +4,12 @@ import (
 	"context"
 	"log"
 
-	"github.com/browserless/runtime"
+	"github.com/Ketan6969/capy"
 )
 
 func main() {
-	// Create a new browserless context
-	bl := browserless.New(context.Background())
+	// Create a new capy context
+	bl := capy.New(context.Background())
 	defer bl.Close()
 
 	// Load a live URL. This will fetch the HTML, build the virtual DOM,

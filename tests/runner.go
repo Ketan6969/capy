@@ -64,7 +64,7 @@ func main() {
 		htmlPath := fmt.Sprintf("tests/engine-smoke/%s/index.html", suite)
 		scriptPath := fmt.Sprintf("tests/engine-smoke/%s/script.js", suite)
 
-		cmd := exec.Command("./browserless", "-html", htmlPath, "-file", scriptPath, "-stats")
+		cmd := exec.Command("./capy", "-html", htmlPath, "-file", scriptPath, "-stats")
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

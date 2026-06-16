@@ -1,6 +1,10 @@
-# Browserless Runtime Architecture
+<p align="center">
+  <img src="../capy-logo.png" alt="Capy Logo" width="300" />
+</p>
 
-The `browserless` project is an experimental lightweight headless browser runtime written in Go. Instead of running a full Chromium instance via Playwright/Puppeteer, `browserless` uses the [Goja](https://github.com/dop251/goja) ECMAScript engine to evaluate JavaScript natively within Go, backed by a custom set of polyfills that mock browser APIs.
+# Capy Runtime Architecture
+
+The `capy` project is an experimental lightweight headless browser runtime written in Go. Instead of running a full Chromium instance via Playwright/Puppeteer, `capy` uses the [Goja](https://github.com/dop251/goja) ECMAScript engine to evaluate JavaScript natively within Go, backed by a custom set of polyfills that mock browser APIs.
 
 ## Core Components
 

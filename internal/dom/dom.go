@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/browserless/runtime/internal/polyfills"
+	"github.com/Ketan6969/capy/internal/polyfills"
 
-	"github.com/browserless/runtime/internal/storage"
+	"github.com/Ketan6969/capy/internal/storage"
 	"github.com/dop251/goja"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"

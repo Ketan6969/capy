@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/browserless/runtime/internal/engine"
+	"github.com/Ketan6969/capy/internal/engine"
 )
 
 func TestFetch(t *testing.T) {
@@ -75,7 +75,7 @@ func TestFetch(t *testing.T) {
 				return fetch(%q, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ name: "Browserless" })
+					body: JSON.stringify({ name: "Capy" })
 				});
 			})
 			.then(res => res.json())
@@ -101,8 +101,8 @@ func TestFetch(t *testing.T) {
 	if getResult != "Hello from local test server!" {
 		t.Errorf("Expected GET result 'Hello from local test server!', got: %s", getResult)
 	}
-	if postResultName != "Browserless" {
-		t.Errorf("Expected POST result name 'Browserless', got: %s", postResultName)
+	if postResultName != "Capy" {
+		t.Errorf("Expected POST result name 'Capy', got: %s", postResultName)
 	}
 }
 

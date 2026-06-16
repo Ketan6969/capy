@@ -56,7 +56,7 @@ func main() {
 	fmt.Println("   BROWSERLESS RUNTIME BENCHMARK V2")
 	fmt.Println("==================================================================")
 
-	cmdBuild := exec.Command("go", "build", "-o", "browserless", "./cmd/browserless")
+	cmdBuild := exec.Command("go", "build", "-o", "capy", "./cmd/capy")
 	cmdBuild.Run()
 
 	data, err := os.ReadFile("tests/corpus.json")
@@ -83,7 +83,7 @@ func main() {
 		go func() {
 			for url := range jobs {
 				pwRes := runCommand("node", "tests/playwright_runner.js", url, "tests/extract_v2.js")
-				blRes := runCommand("./browserless", "-timeout", "15", "-stats", "-html", url, "-file", "tests/extract_v2.js")
+				blRes := runCommand("./capy", "-timeout", "15", "-stats", "-html", url, "-file", "tests/extract_v2.js")
 
 				var pwData, blData ExtractedData
 				json.Unmarshal([]byte(pwRes.DataOut), &pwData)

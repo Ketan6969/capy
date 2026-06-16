@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/browserless/runtime"
+	"github.com/Ketan6969/capy"
 )
 
 func main() {
-	// 1. Create a new Browserless instance
-	bl := browserless.New(context.Background())
+	// 1. Create a new Capy instance
+	bl := capy.New(context.Background())
 	defer bl.Close()
 
 	// 2. Load some raw HTML directly

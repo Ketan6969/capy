@@ -1,8 +1,12 @@
-# Browserless Runtime
+<p align="center">
+  <img src="./capy-logo.png" alt="Capy Logo" width="300" />
+</p>
 
-`browserless` is an experimental, lightweight headless browser runtime written entirely in Go.
+# Capy Runtime
 
-Unlike heavy Chromium-based alternatives (Playwright/Puppeteer), `browserless` executes JavaScript and manipulates a virtual DOM tree natively using the [Goja](https://github.com/dop251/goja) ECMAScript engine. This provides an extremely fast, zero-dependency, and memory-safe environment for server-side JavaScript evaluation and DOM extraction.
+`capy` is an experimental, lightweight headless browser runtime written entirely in Go.
+
+Unlike heavy Chromium-based alternatives (Playwright/Puppeteer), `capy` executes JavaScript and manipulates a virtual DOM tree natively using the [Goja](https://github.com/dop251/goja) ECMAScript engine. This provides an extremely fast, zero-dependency, and memory-safe environment for server-side JavaScript evaluation and DOM extraction.
 
 ## Features
 - **Headless ECMAScript Runtime**: Executes modern JavaScript (ES6+).
@@ -15,31 +19,31 @@ You can use the built-in CLI to test and audit scripts.
 
 ```bash
 # Build the CLI
-go build -o browserless ./cmd/browserless
+go build -o capy ./cmd/capy
 
 # Audit a URL by fetching it and executing its initial scripts
-./browserless audit https://example.com
+./capy audit https://example.com
 
 # Run an external script against a URL
-./browserless -file my_script.js -html https://example.com
+./capy -file my_script.js -html https://example.com
 ```
 
 ### Logging
 The CLI supports robust structured logging. To enable JSON output for production environments, use `-log-format=json`:
 ```bash
-./browserless audit -log-format=json -debug https://example.com
+./capy audit -log-format=json -debug https://example.com
 ```
 
 ## Go SDK Usage
 
-You can embed `browserless` directly into your own Go applications to perform blazing-fast, concurrent DOM extraction without the overhead of Playwright or Puppeteer.
+You can embed `capy` directly into your own Go applications to perform blazing-fast, concurrent DOM extraction without the overhead of Playwright or Puppeteer.
 
 ```go
-import "github.com/browserless/runtime"
+import "github.com/Ketan6969/capy"
 
 func main() {
     // Spin up an isolated VM
-    bl := browserless.New(context.Background())
+    bl := capy.New(context.Background())
     defer bl.Close()
 
     // Fetch and parse URL

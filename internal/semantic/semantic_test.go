@@ -3,7 +3,7 @@ package semantic
 import (
 	"testing"
 
-	"github.com/browserless/runtime/internal/dom"
+	"github.com/Ketan6969/capy/internal/dom"
 )
 
 func TestParseSemanticGraph(t *testing.T) {

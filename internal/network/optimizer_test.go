@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/browserless/runtime/internal/engine"
+	"github.com/Ketan6969/capy/internal/engine"
 )
 
 func TestOptimizerRecordAndReplay(t *testing.T) {

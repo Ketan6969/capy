@@ -35,16 +35,16 @@ func main() {
 	fmt.Println("   PLAYWRIGHT VS BROWSERLESS HEAVY BENCHMARK")
 	fmt.Println("==================================================================")
 
-	// Pre-build browserless
-	cmdBuild := exec.Command("go", "build", "-o", "browserless", "./cmd/browserless")
+	// Pre-build capy
+	cmdBuild := exec.Command("go", "build", "-o", "capy", "./cmd/capy")
 	cmdBuild.Run()
 
-	fmt.Printf("| %-25s | %-20s | %-20s | %-12s |\n", "Target", "Playwright (Time/RAM)", "Browserless (Time/RAM)", "Data Match")
+	fmt.Printf("| %-25s | %-20s | %-20s | %-12s |\n", "Target", "Playwright (Time/RAM)", "Capy (Time/RAM)", "Data Match")
 	fmt.Println("|---------------------------|----------------------|----------------------|--------------|")
 
 	for _, url := range targets {
 		pwRes := runCommand("node", "tests/playwright_runner.js", url, "tests/extract.js")
-		blRes := runCommand("./browserless", "-timeout", "15", "-html", url, "-file", "tests/extract.js")
+		blRes := runCommand("./capy", "-timeout", "15", "-html", url, "-file", "tests/extract.js")
 
 		match := "❌ No"
 		if pwRes.DataOut != "" && blRes.DataOut != "" {

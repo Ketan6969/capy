@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/browserless/runtime/internal/dom"
+	"github.com/Ketan6969/capy/internal/dom"
 )
 
 // ComponentType represents the class of a semantic component.

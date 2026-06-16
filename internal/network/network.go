@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/browserless/runtime/internal/engine"
-	"github.com/browserless/runtime/internal/polyfills"
+	"github.com/Ketan6969/capy/internal/engine"
+	"github.com/Ketan6969/capy/internal/polyfills"
 	"github.com/dop251/goja"
 )
 

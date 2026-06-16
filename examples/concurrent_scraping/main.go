@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/browserless/runtime"
+	"github.com/Ketan6969/capy"
 )
 
 func fetchAndExtract(url string, wg *sync.WaitGroup) {
@@ -17,7 +17,7 @@ func fetchAndExtract(url string, wg *sync.WaitGroup) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	bl := browserless.New(ctx)
+	bl := capy.New(ctx)
 	defer bl.Close()
 
 	log.Printf("[%s] Starting fetch...\n", url)
@@ -38,7 +38,7 @@ func fetchAndExtract(url string, wg *sync.WaitGroup) {
 }
 
 func main() {
-	// Because browserless uses Goja (which is incredibly light and memory safe),
+	// Because capy uses Goja (which is incredibly light and memory safe),
 	// we can easily spin up dozens of isolated runtimes concurrently!
 	urls := []string{
 		"https://example.com",

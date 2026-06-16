@@ -1,4 +1,4 @@
-module github.com/browserless/runtime
+module github.com/Ketan6969/capy
 
 go 1.26.2
 
