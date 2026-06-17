@@ -888,4 +888,12 @@
 				databases: function() { return Promise.resolve([]); }
 			};
 
-		})();
+			// Ensure all polyfilled methods on proto are non-enumerable
+	// so they do not break for-in loops on Arrays and basic Objects!
+	['closest', 'matches', 'addEventListener', 'removeEventListener', 'dispatchEvent', 'remove', 'getBoundingClientRect', 'write', '__jqPatched'].forEach(prop => {
+		if (proto[prop] !== undefined) {
+			Object.defineProperty(proto, prop, { enumerable: false });
+		}
+	});
+})();
+

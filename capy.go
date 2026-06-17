@@ -43,7 +43,7 @@ func (b *Capy) LoadHTML(htmlStr string) error {
 	return nil
 }
 
-// LoadURL fetches a URL and loads it into the environment.
+// LoadURL fetches a URL via GET and loads it into the environment.
 // It also executes any synchronous <script> tags found in the HTML.
 func (b *Capy) LoadURL(urlStr string) error {
 	req, err := http.NewRequestWithContext(b.ctx.Ctx(), "GET", urlStr, nil)
@@ -52,7 +52,12 @@ func (b *Capy) LoadURL(urlStr string) error {
 	}
 	// Use standard headers to pretend we are a browser
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	
+	return b.LoadRequest(req)
+}
+
+// LoadRequest executes an arbitrary HTTP request and loads the resulting HTML into the environment.
+// This allows for custom HTTP Methods, custom Headers, and custom bodies.
+func (b *Capy) LoadRequest(req *http.Request) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -73,6 +78,8 @@ func (b *Capy) LoadURL(urlStr string) error {
 		return err
 	}
 
+	urlStr := req.URL.String()
+
 	b.doc = documentRoot
 	dom.SetupDOM(b.ctx.VM(), documentRoot, urlStr)
 	
@@ -83,9 +90,19 @@ func (b *Capy) LoadURL(urlStr string) error {
 		if src != "" {
 			// Resolve URL
 			resolved := b.resolveURL(urlStr, src)
-			b.ctx.RunScript(src, "fetch('"+resolved+"').then(r => r.text()).then(eval).catch(console.error);")
+			// Execute synchronously in Go to preserve script load order
+			req, err := http.NewRequestWithContext(b.ctx.Ctx(), "GET", resolved, nil)
+			if err == nil {
+				req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+				if res, err := http.DefaultClient.Do(req); err == nil {
+					if codeBytes, err := io.ReadAll(res.Body); err == nil {
+						b.ctx.RunScript(src, string(codeBytes))
+					}
+					res.Body.Close()
+				}
+			}
 		} else {
-			code := script.GetInnerHTML()
+			code := script.GetTextContent()
 			b.ctx.RunScript("inline", code)
 		}
 	}
@@ -149,3 +166,6 @@ func (b *Capy) resolveURL(base, ref string) string {
 	l := dom.NewLocation(base)
 	return l.ResolveURL(ref)
 }
+
+// Node aliases the internal dom.Node so external packages can use it.
+type Node = dom.Node

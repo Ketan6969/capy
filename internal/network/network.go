@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +67,21 @@ func (nm *NetworkManager) SetupNetworkInstrumented(ctx *engine.Context, counter 
 
 		slog.Debug("Network request initiated", "url", url)
 
+		// Attempt to resolve relative URLs using window.location.href if available
+		var resolvedURL = url
+		if loc := vm.Get("location"); loc != nil {
+			if obj := loc.ToObject(vm); obj != nil {
+				if href := obj.Get("href"); href != nil {
+					baseURLStr := href.String()
+					if b, err := neturl.Parse(baseURLStr); err == nil {
+						if r, err := neturl.Parse(url); err == nil {
+							resolvedURL = b.ResolveReference(r).String()
+						}
+					}
+				}
+			}
+		}
+
 		// Increment network request counter if provided
 		if counter != nil {
 			*counter++
@@ -74,7 +90,7 @@ func (nm *NetworkManager) SetupNetworkInstrumented(ctx *engine.Context, counter 
 		ctx.WgAdd(1)
 
 		go func() {
-			res, err := nm.performRequest(ctx.Ctx(), url, options)
+			res, err := nm.performRequest(ctx.Ctx(), resolvedURL, options)
 
 			ctx.Enqueue(func() {
 				defer ctx.WgDone()
